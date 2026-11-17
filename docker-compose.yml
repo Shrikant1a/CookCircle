@@ -1,0 +1,86 @@
+version: '3.8'
+
+services:
+  # ==============================================================================
+  # 1. Relational Database: MySQL 8.0
+  # ==============================================================================
+  mysql:
+    image: mysql:8.0
+    container_name: cookcircle-mysql
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_DATABASE: cookcircle_db
+      MYSQL_USER: cookcircle_user
+      MYSQL_PASSWORD: cookcircle_pass
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./backend/src/main/resources/db/migration:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+    networks:
+      - cookcircle-network
+
+  # ==============================================================================
+  # 2. REST API Backend: Spring Boot 3.3.0 (Java 17 JRE)
+  # ==============================================================================
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: cookcircle-backend
+    restart: always
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/cookcircle_db?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
+      SPRING_DATASOURCE_USERNAME: cookcircle_user
+      SPRING_DATASOURCE_PASSWORD: cookcircle_pass
+      SPRING_JPA_HIBERNATE_DDL_AUTO: update
+      SPRING_FLYWAY_ENABLED: "true"
+      COOKCIRCLE_JWT_SECRET: CookCircleSuperSecretSigningKeyForHS512ProductionJWTToken2026Secure
+      COOKCIRCLE_JWT_EXPIRATION_MS: 86400000
+      RAZORPAY_KEY_ID: rzp_test_CookCircleKey123
+      RAZORPAY_KEY_SECRET: rzp_test_secret_CookCircleSecureHMAC
+    ports:
+      - "8080:8080"
+    networks:
+      - cookcircle-network
+
+  # ==============================================================================
+  # 3. Web UI Frontend: React 18 + Vite + Tailwind (Nginx Alpine)
+  # ==============================================================================
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: cookcircle-frontend
+    restart: always
+    depends_on:
+      - backend
+    ports:
+      - "80:80"
+      - "5173:80"
+    networks:
+      - cookcircle-network
+
+# ==============================================================================
+# Persistent Volumes & Network Topology
+# ==============================================================================
+volumes:
+  mysql_data:
+    name: cookcircle_mysql_data
+    driver: local
+
+networks:
+  cookcircle-network:
+    name: cookcircle-network
+    driver: bridge
